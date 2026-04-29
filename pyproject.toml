@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling==1.26.3"]
+build-backend = "hatchling.build"
+
+[project]
+name = "chmseek"
+version = "0.1.0"
+description = "Secure, local-first CLI search and reading for Windows CHM help files."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+  { name = "chmseek contributors" }
+]
+keywords = ["chm", "html-help", "search", "documentation", "embeddings", "sqlite"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Documentation",
+  "Topic :: Software Development :: Documentation"
+]
+dependencies = [
+  "beautifulsoup4==4.13.4",
+  "lxml==6.1.0",
+  "numpy==2.2.6",
+  "pydantic==2.11.5",
+  "sentence-transformers==5.4.1",
+  "transformers==5.0.0rc3"
+]
+
+[project.urls]
+Homepage = "https://github.com/zoeith/chmseek"
+Issues = "https://github.com/zoeith/chmseek/issues"
+
+[project.scripts]
+chmseek = "chmseek.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/chmseek"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = ["S101", "S603"]

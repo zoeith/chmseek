@@ -1,0 +1,8 @@
+name: chmseek-dev
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - pip
+  - pip:
+      - -r requirements-dev.lock
