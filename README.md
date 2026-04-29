@@ -174,6 +174,9 @@ logs/
 - `chmseek diagnose`: inspect OS, SQLite, extractor, model, and audit readiness.
 - `chmseek audit`: run dependency/release/security checks.
 
+For a short copy-paste guide that can be added to other projects for agent use, see
+`AGENT_CHMSEEK_USAGE.md`.
+
 All commands that support `--json` return stable JSON. Errors use:
 
 ```json
