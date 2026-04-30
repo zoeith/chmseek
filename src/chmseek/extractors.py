@@ -74,9 +74,11 @@ class WindowsHhExtractor(Extractor):
                 ["Install/use Windows HTML Help, or pass --from-extracted-dir."],
             )
         _prepare_output_dir(output_dir)
+        output_arg = windows_short_path(output_dir)
+        source_arg = windows_short_path(source)
         try:
             completed = subprocess.run(
-                [hh, "-decompile", str(output_dir), str(source)],
+                [hh, "-decompile", output_arg, source_arg],
                 check=False,
                 capture_output=True,
                 text=True,
@@ -222,3 +224,34 @@ def _is_within(path: Path, root: Path) -> bool:
     except ValueError:
         return False
     return True
+
+
+def windows_short_path(path: Path) -> str:
+    if platform.system() != "Windows":
+        return str(path)
+    try:
+        return _get_windows_short_path(path) or str(path)
+    except OSError:
+        return str(path)
+
+
+def _get_windows_short_path(path: Path) -> str | None:
+    import ctypes
+    from ctypes import wintypes
+
+    text = str(path)
+    get_short_path_name = ctypes.windll.kernel32.GetShortPathNameW
+    get_short_path_name.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.LPWSTR,
+        wintypes.DWORD,
+    ]
+    get_short_path_name.restype = wintypes.DWORD
+    required = get_short_path_name(text, None, 0)
+    if required == 0:
+        return None
+    buffer = ctypes.create_unicode_buffer(required)
+    result = get_short_path_name(text, buffer, required)
+    if result == 0 or result > required:
+        return None
+    return buffer.value

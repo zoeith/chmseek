@@ -28,4 +28,5 @@ def cli_env() -> dict[str, str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(SRC)
     env["CHMSEEK_EMBEDDING_BACKEND"] = "fake"
+    env["CHMSEEK_SKIP_PIP_AUDIT"] = "1"
     return env

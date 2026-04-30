@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from chmseek import search as search_module
+from chmseek.constants import DEFAULT_MODEL, DEFAULT_MODEL_REVISION
+from chmseek.embeddings import EmbeddingConfig, make_embedding_backend, normalize_embedding_config
 from chmseek.indexer import IndexOptions, ensure_index, index_status
 from chmseek.search import run_search
 from chmseek.storage import connect, counts, get_toc_entries, keyword_search
@@ -32,6 +35,7 @@ def test_index_from_extracted_dir(tmp_path: Path, fixture_chm: Path, extracted_h
         conn.close()
     assert count_info["pages"] == 6
     assert count_info["chunks"] >= 6
+    assert count_info["images"] == 1
 
 
 def test_keyword_search_finds_exact_symbol(
@@ -83,8 +87,20 @@ def test_search_json_schema_is_stable(
         "source_uri",
         "snippet",
         "text_preview",
+        "images",
         "neighbor_command",
     }
+
+
+def test_search_results_include_image_metadata(
+    tmp_path: Path, fixture_chm: Path, extracted_help: Path
+) -> None:
+    handle = build_fixture_index(tmp_path, fixture_chm, extracted_help)
+    payload = run_search(handle, "CreateSession", mode="hybrid", top_k=1)
+    image = payload["results"][0]["images"][0]
+    assert image["source_path"] == "images/session-flow.png"
+    assert image["alt"] == "Session lifecycle diagram"
+    assert image["asset_uri"].endswith("/images/session-flow.png")
 
 
 def test_toc_parsing_works_with_hhc(
@@ -115,3 +131,40 @@ def test_stale_detection_for_embedding_changes(
         IndexOptions(index_dir=handle.index_dir, model_name="other-model", embedding_dim=128),
     )
     assert "embedding_model" in status["stale_reasons"]
+    status = index_status(
+        fixture_chm,
+        IndexOptions(
+            index_dir=handle.index_dir,
+            model_name="fake",
+            embedding_dim=128,
+            device="cpu",
+        ),
+    )
+    assert "embedding_device" in status["stale_reasons"]
+
+
+def test_default_nomic_config_uses_pinned_revision() -> None:
+    config = normalize_embedding_config(EmbeddingConfig(model_name=DEFAULT_MODEL))
+    assert config.model_revision == DEFAULT_MODEL_REVISION
+
+
+def test_search_reuses_manifest_embedding_policy(
+    monkeypatch, tmp_path: Path, fixture_chm: Path, extracted_help: Path
+) -> None:
+    handle = build_fixture_index(tmp_path, fixture_chm, extracted_help)
+    handle.manifest["embedding"]["revision"] = "manifest-revision"
+    handle.manifest["embedding"]["remote_model_code_allowed"] = True
+    handle.manifest["embedding"]["requested_device"] = "cpu"
+    captured: dict[str, EmbeddingConfig] = {}
+
+    def fake_backend(config: EmbeddingConfig):
+        captured["config"] = config
+        return make_embedding_backend(EmbeddingConfig(model_name="fake", dimension=128))
+
+    monkeypatch.setattr(search_module, "make_embedding_backend", fake_backend)
+    run_search(handle, "CreateSession", mode="semantic", top_k=1)
+
+    config = captured["config"]
+    assert config.model_revision == "manifest-revision"
+    assert config.allow_remote_model_code is True
+    assert config.device == "cpu"

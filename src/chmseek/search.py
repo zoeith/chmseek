@@ -8,7 +8,15 @@ import numpy as np
 from .embeddings import EmbeddingConfig, make_embedding_backend
 from .errors import ChmseekError
 from .indexer import IndexHandle
-from .storage import SearchRow, connect, counts, get_help_file, keyword_search, load_embedding_rows
+from .storage import (
+    SearchRow,
+    attach_images_to_rows,
+    connect,
+    counts,
+    get_help_file,
+    keyword_search,
+    load_embedding_rows,
+)
 from .utils import preview_text, source_uri
 
 
@@ -22,6 +30,7 @@ def run_search(
     allow_remote_model_code: bool = False,
     offline: bool = False,
     model_revision: str | None = None,
+    device: str | None = None,
 ) -> dict[str, Any]:
     if mode not in {"hybrid", "semantic", "keyword"}:
         raise ChmseekError("INVALID_SEARCH_MODE", f"Unsupported search mode: {mode}")
@@ -36,18 +45,24 @@ def run_search(
         if mode in {"hybrid", "keyword"}:
             keyword_rows = keyword_search(conn, query, max(top_k * 5, 20))
         if mode in {"hybrid", "semantic"}:
+            embedding_manifest = handle.manifest.get("embedding", {})
             config = EmbeddingConfig(
                 model_name=help_file["embedding_model"],
                 dimension=int(help_file["embedding_dimension"]),
                 allow_model_download=allow_model_download,
-                allow_remote_model_code=allow_remote_model_code,
+                allow_remote_model_code=(
+                    allow_remote_model_code
+                    or bool(embedding_manifest.get("remote_model_code_allowed"))
+                ),
                 offline=offline,
                 model_revision=(
-                    model_revision or handle.manifest.get("embedding", {}).get("revision")
+                    model_revision or embedding_manifest.get("revision")
                 ),
+                device=device or embedding_manifest.get("requested_device") or "auto",
             )
             semantic_rows = semantic_search(conn, query, config, max(top_k * 5, 20))
         results = rank_results(mode, keyword_rows, semantic_rows)[:top_k]
+        attach_images_to_rows(conn, results)
         return {
             "ok": True,
             "query": query,
@@ -148,10 +163,17 @@ def _result_payload(rank: int, row: SearchRow, chm_path: Path, query: str) -> di
         "source_uri": source_uri(chm_path, row.source_path, row.anchor),
         "snippet": make_snippet(row.text, query),
         "text_preview": preview_text(row.text),
+        "images": [_image_payload(image, chm_path) for image in row.images],
         "neighbor_command": (
             f"chmseek read {chm_path} --chunk-id {row.chunk_id} --neighbors 2 --json"
         ),
     }
+
+
+def _image_payload(image: dict[str, Any], chm_path: Path) -> dict[str, Any]:
+    payload = dict(image)
+    payload["asset_uri"] = source_uri(chm_path, payload["source_path"])
+    return payload
 
 
 def make_snippet(text: str, query: str, limit: int = 220) -> str:

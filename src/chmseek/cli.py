@@ -7,7 +7,14 @@ from typing import Any
 
 from .audit import human_audit_report, run_audit
 from .diagnostics import diagnose
-from .embeddings import DEFAULT_EMBEDDING_DIM, default_model_name, is_model_cached
+from .embeddings import (
+    DEFAULT_EMBEDDING_DIM,
+    EmbeddingConfig,
+    default_model_name,
+    is_model_cached,
+    make_embedding_backend,
+    normalize_embedding_config,
+)
 from .errors import ChmseekError
 from .indexer import IndexOptions, ensure_index, index_status
 from .reader import read_content
@@ -87,6 +94,29 @@ def build_parser() -> argparse.ArgumentParser:
     diag.add_argument("--model", default=default_model_name())
     add_json_option(diag)
 
+    models = sub.add_parser("models", help="Manage embedding models.")
+    models_sub = models.add_subparsers(dest="models_command", required=True)
+    prepare = models_sub.add_parser(
+        "prepare",
+        help="Download/cache the configured embedding model.",
+    )
+    prepare.add_argument("--model", default=default_model_name(), help="Embedding model name.")
+    prepare.add_argument("--embedding-dim", type=int, default=DEFAULT_EMBEDDING_DIM)
+    prepare.add_argument(
+        "--allow-model-download",
+        action="store_true",
+        help="Allow one-time embedding model download if not cached.",
+    )
+    prepare.add_argument(
+        "--allow-remote-model-code",
+        action="store_true",
+        help="Allow remote model code, only with --model-revision.",
+    )
+    prepare.add_argument("--model-revision", help="Pinned model revision for remote model code.")
+    prepare.add_argument("--offline", action="store_true", help="Do not download embedding models.")
+    add_device_option(prepare)
+    add_json_option(prepare)
+
     audit = sub.add_parser("audit", help="Run release/security checks.")
     add_json_option(audit)
 
@@ -120,6 +150,7 @@ def add_runtime_options(parser: argparse.ArgumentParser, *, include_model: bool 
         help="Allow remote model code, only with --model-revision.",
     )
     parser.add_argument("--model-revision", help="Pinned model revision for remote model code.")
+    add_device_option(parser)
     parser.add_argument(
         "--from-extracted-dir",
         type=Path,
@@ -131,6 +162,15 @@ def add_runtime_options(parser: argparse.ArgumentParser, *, include_model: bool 
     else:
         parser.add_argument("--model", help=argparse.SUPPRESS)
         parser.add_argument("--embedding-dim", type=int, help=argparse.SUPPRESS)
+
+
+def add_device_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--device",
+        choices=["auto", "cpu", "cuda", "mps", "directml"],
+        default="auto",
+        help="Embedding device for model loading and indexing.",
+    )
 
 
 def dispatch(args: argparse.Namespace) -> dict[str, Any]:
@@ -155,6 +195,7 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
             allow_remote_model_code=args.allow_remote_model_code,
             offline=args.offline,
             model_revision=args.model_revision,
+            device=args.device,
         )
     if args.command == "grep":
         handle = ensure_index(args.path, options_from_args(args))
@@ -176,6 +217,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return run_info(args.path, options_from_args(args))
     if args.command == "diagnose":
         return diagnose(model_name=args.model)
+    if args.command == "models":
+        return run_models_prepare(args)
     if args.command == "audit":
         return run_audit(Path.cwd())
     raise ChmseekError("UNKNOWN_COMMAND", f"Unknown command: {args.command}")
@@ -192,7 +235,35 @@ def options_from_args(args: argparse.Namespace) -> IndexOptions:
         offline=getattr(args, "offline", False),
         model_revision=getattr(args, "model_revision", None),
         from_extracted_dir=getattr(args, "from_extracted_dir", None),
+        device=getattr(args, "device", "auto"),
     )
+
+
+def run_models_prepare(args: argparse.Namespace) -> dict[str, Any]:
+    if args.models_command != "prepare":
+        raise ChmseekError("UNKNOWN_COMMAND", f"Unknown models command: {args.models_command}")
+    config = normalize_embedding_config(
+        EmbeddingConfig(
+            model_name=args.model,
+            dimension=args.embedding_dim,
+            allow_model_download=args.allow_model_download,
+            allow_remote_model_code=args.allow_remote_model_code,
+            offline=args.offline,
+            model_revision=args.model_revision,
+            device=args.device,
+        )
+    )
+    backend = make_embedding_backend(config)
+    return {
+        "ok": True,
+        "model": backend.model_name,
+        "revision": backend.model_revision,
+        "embedding_dimension": backend.dimension,
+        "model_cached": is_model_cached(backend.model_name),
+        "remote_model_code_allowed": backend.remote_model_code_allowed,
+        "requested_device": backend.requested_device,
+        "resolved_device": backend.resolved_device,
+    }
 
 
 def run_grep(handle, query: str, top_k: int) -> dict[str, Any]:
@@ -270,9 +341,12 @@ def run_info(path: Path, options: IndexOptions) -> dict[str, Any]:
             "chunker_version": (manifest or {}).get("chunker_version"),
             "embedding_model": embedding_model,
             "embedding_dimension": embedding.get("dimension"),
+            "embedding_revision": embedding.get("revision"),
             "model_cache_status": (
                 "cached" if embedding_model and is_model_cached(embedding_model) else "not_cached"
             ),
+            "requested_device": embedding.get("requested_device"),
+            "resolved_device": embedding.get("resolved_device"),
             "extraction_method": (manifest or {}).get("extraction_method"),
             "remote_model_code_allowed": embedding.get("remote_model_code_allowed"),
         },
@@ -282,6 +356,11 @@ def run_info(path: Path, options: IndexOptions) -> dict[str, Any]:
 def humanize(args: argparse.Namespace, payload: dict[str, Any]) -> str:
     if args.command == "audit":
         return human_audit_report(payload)
+    if args.command == "models":
+        return (
+            f"model ready: {payload['model']} revision={payload['revision']} "
+            f"device={payload['resolved_device']}"
+        )
     if args.command == "diagnose":
         return "\n".join(
             [

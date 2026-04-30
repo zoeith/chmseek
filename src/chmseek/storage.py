@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +24,7 @@ class SearchRow:
     text: str
     token_count: int
     score: float
+    images: list[dict[str, Any]] = field(default_factory=list)
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
@@ -58,6 +59,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(
         """
         DROP TABLE IF EXISTS chunks_fts;
+        DROP TABLE IF EXISTS image_refs;
         DROP TABLE IF EXISTS toc_entries;
         DROP TABLE IF EXISTS chunks;
         DROP TABLE IF EXISTS pages;
@@ -113,6 +115,15 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
           depth INTEGER
         );
 
+        CREATE TABLE image_refs (
+          image_id TEXT PRIMARY KEY,
+          page_id TEXT NOT NULL,
+          source_path TEXT NOT NULL,
+          alt TEXT,
+          title TEXT,
+          FOREIGN KEY(page_id) REFERENCES pages(page_id)
+        );
+
         CREATE VIRTUAL TABLE chunks_fts USING fts5(
           chunk_id UNINDEXED,
           title,
@@ -160,6 +171,25 @@ def insert_index(
                 (page.page_id, page.source_path, page.title, None, page.raw_html_path, page.text)
                 for page in pages
             ],
+        )
+        image_rows = []
+        for page in pages:
+            for image_ref in page.image_refs:
+                image_rows.append(
+                    (
+                        f"img_{len(image_rows) + 1:06d}",
+                        page.page_id,
+                        image_ref.source_path,
+                        image_ref.alt,
+                        image_ref.title,
+                    )
+                )
+        conn.executemany(
+            """
+            INSERT INTO image_refs (image_id, page_id, source_path, alt, title)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            image_rows,
         )
         for chunk, embedding in zip(chunks, embeddings, strict=True):
             section_path = " > ".join(chunk.section_path)
@@ -220,7 +250,8 @@ def counts(conn: sqlite3.Connection) -> dict[str, int]:
     pages = conn.execute("SELECT COUNT(*) FROM pages").fetchone()[0]
     chunks = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
     toc = conn.execute("SELECT COUNT(*) FROM toc_entries").fetchone()[0]
-    return {"pages": pages, "chunks": chunks, "toc_entries": toc}
+    images = conn.execute("SELECT COUNT(*) FROM image_refs").fetchone()[0]
+    return {"pages": pages, "chunks": chunks, "toc_entries": toc, "images": images}
 
 
 def keyword_search(conn: sqlite3.Connection, query: str, limit: int) -> list[SearchRow]:
@@ -357,6 +388,44 @@ def get_toc_entries(conn: sqlite3.Connection, max_depth: int | None = None) -> l
             "SELECT * FROM toc_entries WHERE depth <= ? ORDER BY ordinal", (max_depth,)
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def attach_images_to_rows(conn: sqlite3.Connection, rows: list[SearchRow]) -> None:
+    images_by_page = get_image_refs_for_page_ids(conn, [row.page_id for row in rows])
+    for row in rows:
+        row.images = images_by_page.get(row.page_id, [])
+
+
+def attach_images_to_payloads(conn: sqlite3.Connection, payloads: list[dict[str, Any]]) -> None:
+    images_by_page = get_image_refs_for_page_ids(
+        conn, [payload["page_id"] for payload in payloads if payload.get("page_id")]
+    )
+    for payload in payloads:
+        payload["images"] = images_by_page.get(payload["page_id"], [])
+
+
+def get_image_refs_for_page_ids(
+    conn: sqlite3.Connection, page_ids: list[str]
+) -> dict[str, list[dict[str, Any]]]:
+    unique_page_ids = sorted(set(page_ids))
+    if not unique_page_ids:
+        return {}
+    images_by_page: dict[str, list[dict[str, Any]]] = {page_id: [] for page_id in unique_page_ids}
+    for page_id in unique_page_ids:
+        rows = conn.execute(
+            """
+            SELECT image_id, page_id, source_path, alt, title
+            FROM image_refs
+            WHERE page_id = ?
+            ORDER BY image_id
+            """,
+            (page_id,),
+        ).fetchall()
+        for row in rows:
+            payload = dict(row)
+            row_page_id = payload.pop("page_id")
+            images_by_page.setdefault(row_page_id, []).append(payload)
+    return images_by_page
 
 
 def build_fts_query(query: str) -> str:

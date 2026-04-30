@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.1 - 2026-04-29
+
+Bugfix and usability release.
+
+- Added `CHMSEEK_SKIP_PIP_AUDIT=1` for fast deterministic CLI tests.
+- Improved Windows `hh.exe` extraction by using short paths when available.
+- Pinned the default Nomic model revision to `e9b6763023c676ca8431644204f50c2b100d9aab`.
+- Added `chmseek models prepare` for explicit model cache warmup.
+- Added embedding device selection for `auto`, `cpu`, `cuda`, `mps`, and optional `directml`.
+- Added progress display for document embedding while keeping query embedding quiet.
+- Added safe local image-reference metadata in search/read JSON output.
+- Improved Unicode readability in JSON output.
+- Documented speed options, DirectML behavior, pinned model policy, and long-indexing expectations.
+
 ## 0.1.0 - 2026-04-29
 
 Initial MVP release candidate.

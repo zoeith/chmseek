@@ -11,6 +11,7 @@ import numpy as np
 from .constants import (
     DEFAULT_EMBEDDING_DIM,
     DEFAULT_MODEL,
+    DEFAULT_MODEL_REVISION,
     DOCUMENT_PREFIX,
     NORMALIZE_EMBEDDINGS,
     QUERY_PREFIX,
@@ -27,6 +28,7 @@ class EmbeddingConfig:
     allow_remote_model_code: bool = False
     offline: bool = False
     model_revision: str | None = None
+    device: str = "auto"
 
 
 class EmbeddingBackend(Protocol):
@@ -38,6 +40,8 @@ class EmbeddingBackend(Protocol):
     used_local_files_only: bool
     remote_model_code_allowed: bool
     model_revision: str | None
+    requested_device: str
+    resolved_device: str
 
     def embed_documents(self, texts: list[str]) -> np.ndarray:
         ...
@@ -53,11 +57,26 @@ def default_model_name() -> str:
 
 
 def make_embedding_backend(config: EmbeddingConfig) -> EmbeddingBackend:
+    config = normalize_embedding_config(config)
     if config.dimension <= 0:
         raise ChmseekError("INVALID_EMBEDDING_DIM", "Embedding dimension must be positive.")
     if config.model_name == "fake":
-        return FakeEmbeddingBackend(config.dimension)
+        return FakeEmbeddingBackend(config.dimension, requested_device=config.device)
     return SentenceTransformersEmbeddingBackend(config)
+
+
+def normalize_embedding_config(config: EmbeddingConfig) -> EmbeddingConfig:
+    if config.model_name == DEFAULT_MODEL and config.model_revision is None:
+        return EmbeddingConfig(
+            model_name=config.model_name,
+            dimension=config.dimension,
+            allow_model_download=config.allow_model_download,
+            allow_remote_model_code=config.allow_remote_model_code,
+            offline=config.offline,
+            model_revision=DEFAULT_MODEL_REVISION,
+            device=config.device,
+        )
+    return config
 
 
 def normalize_matrix(matrix: np.ndarray) -> np.ndarray:
@@ -76,9 +95,13 @@ class FakeEmbeddingBackend:
     used_local_files_only = True
     remote_model_code_allowed = False
     model_revision = None
+    resolved_device = "cpu"
 
-    def __init__(self, dimension: int = DEFAULT_EMBEDDING_DIM) -> None:
+    def __init__(
+        self, dimension: int = DEFAULT_EMBEDDING_DIM, requested_device: str = "auto"
+    ) -> None:
         self.dimension = dimension
+        self.requested_device = requested_device
         self.last_document_inputs: list[str] = []
         self.last_query_input: str | None = None
 
@@ -114,6 +137,9 @@ class SentenceTransformersEmbeddingBackend:
         self.dimension = config.dimension
         self.model_revision = config.model_revision
         self.remote_model_code_allowed = config.allow_remote_model_code
+        self.requested_device = config.device
+        model_device, resolved_device = resolve_device(config.device)
+        self.resolved_device = resolved_device
         if config.allow_remote_model_code and not config.model_revision:
             raise ChmseekError(
                 "REMOTE_MODEL_CODE_UNPINNED",
@@ -153,6 +179,7 @@ class SentenceTransformersEmbeddingBackend:
             "trust_remote_code": config.allow_remote_model_code,
             "revision": config.model_revision,
             "local_files_only": local_files_only,
+            "device": model_device,
         }
         try:
             self._model = SentenceTransformer(config.model_name, **kwargs)
@@ -183,17 +210,20 @@ class SentenceTransformersEmbeddingBackend:
         )
 
     def embed_documents(self, texts: list[str]) -> np.ndarray:
-        return self._encode([self.document_prefix + text for text in texts])
+        return self._encode(
+            [self.document_prefix + text for text in texts],
+            show_progress_bar=True,
+        )
 
     def embed_query(self, text: str) -> np.ndarray:
-        return self._encode([self.query_prefix + text])[0]
+        return self._encode([self.query_prefix + text], show_progress_bar=False)[0]
 
-    def _encode(self, texts: list[str]) -> np.ndarray:
+    def _encode(self, texts: list[str], *, show_progress_bar: bool) -> np.ndarray:
         vectors = self._model.encode(
             texts,
             convert_to_numpy=True,
             normalize_embeddings=True,
-            show_progress_bar=False,
+            show_progress_bar=show_progress_bar,
         ).astype(np.float32)
         if vectors.shape[1] < self.dimension:
             raise ChmseekError(
@@ -250,3 +280,59 @@ def is_model_cached(model_name: str) -> bool:
     cache_roots.append(Path.home() / ".cache" / "huggingface" / "hub")
     safe_name = "models--" + model_name.replace("/", "--")
     return any((root / safe_name).exists() for root in cache_roots)
+
+
+def resolve_device(requested_device: str) -> tuple[object, str]:
+    requested = (requested_device or "auto").lower()
+    valid = {"auto", "cpu", "cuda", "mps", "directml"}
+    if requested not in valid:
+        raise ChmseekError(
+            "INVALID_EMBEDDING_DEVICE",
+            f"Unsupported embedding device: {requested_device}",
+            ["Choose one of: auto, cpu, cuda, mps, directml."],
+        )
+    if requested == "cpu":
+        return "cpu", "cpu"
+    if requested == "directml":
+        try:
+            import torch_directml
+        except Exception as exc:
+            raise ChmseekError(
+                "DIRECTML_UNAVAILABLE",
+                "DirectML was requested but torch-directml is not installed.",
+                ["Install torch-directml separately or use --device auto/cpu/cuda/mps."],
+            ) from exc
+        return torch_directml.device(), "directml"
+
+    try:
+        import torch
+    except Exception as exc:
+        if requested == "auto":
+            return "cpu", "cpu"
+        raise ChmseekError(
+            "TORCH_UNAVAILABLE",
+            f"{requested} was requested but torch could not be imported.",
+            ["Install the embedding dependencies or use --device cpu."],
+        ) from exc
+
+    if requested == "cuda":
+        if torch.cuda.is_available():
+            return "cuda", "cuda"
+        raise ChmseekError(
+            "CUDA_UNAVAILABLE",
+            "CUDA was requested but is not available to PyTorch.",
+            ["Use --device auto or --device cpu, or install a CUDA-enabled PyTorch build."],
+        )
+    if requested == "mps":
+        if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+            return "mps", "mps"
+        raise ChmseekError(
+            "MPS_UNAVAILABLE",
+            "MPS was requested but is not available to PyTorch.",
+            ["Use --device auto or --device cpu."],
+        )
+    if torch.cuda.is_available():
+        return "cuda", "cuda"
+    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        return "mps", "mps"
+    return "cpu", "cpu"

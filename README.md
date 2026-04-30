@@ -13,7 +13,7 @@ toc -> search -> read result with neighbors -> grep exact term -> read page/chun
 
 ## Status
 
-This is an MVP release candidate. It includes:
+This is the `0.1.1` MVP release. It includes:
 
 - Windows-first CHM extraction through `hh.exe -decompile`.
 - Test/development indexing from an already-extracted help directory.
@@ -21,6 +21,9 @@ This is an MVP release candidate. It includes:
 - Safe HTML/text parsing with active content ignored.
 - SQLite storage with FTS5 keyword search.
 - Local embedding search with Nomic Embed Text v1.5 by default.
+- Explicit pinned-model cache preparation through `chmseek models prepare`.
+- Embedding device selection for CUDA, MPS, optional DirectML, or CPU.
+- Metadata for safe local image references in CHM pages.
 - Hybrid search using reciprocal rank fusion.
 - Stable JSON output for tools and agents.
 - Fixture-based tests that do not require proprietary CHM files.
@@ -48,6 +51,8 @@ pytest
 
 ```bash
 chmseek diagnose
+
+chmseek models prepare --allow-model-download
 
 chmseek index VendorSDK.chm --allow-model-download
 
@@ -97,10 +102,12 @@ The indexer only processes allowlisted text-like file types:
 - `.xhtml`
 - `.txt`
 - `.hhc` and `.hhk` for TOC/index metadata
+- safe local image assets: `.bmp`, `.gif`, `.jpeg`, `.jpg`, `.png`, `.webp`
 
 Active or executable content is ignored, including scripts, ActiveX/object/embed/iframe/frame
-content, shortcuts, binaries, installers, CSS, and images. Subprocess calls use argument lists,
-captured output, timeouts, and no shell execution.
+content, shortcuts, binaries, installers, and CSS. Safe local image assets are not rendered or
+opened, but references to useful diagrams/screenshots are exposed as JSON metadata. Subprocess
+calls use argument lists, captured output, timeouts, and no shell execution.
 
 ## Extraction
 
@@ -123,10 +130,25 @@ nomic-ai/nomic-embed-text-v1.5
 
 The default embedding dimension is `768`.
 
+The default model revision is pinned to:
+
+```text
+e9b6763023c676ca8431644204f50c2b100d9aab
+```
+
+This makes first-use indexing reproducible and prevents silent model drift. Model download is still
+explicit rather than happening during package install.
+
 Model download is explicit. If the model is not cached, indexing/search fails unless you pass:
 
 ```bash
 --allow-model-download
+```
+
+To warm the model cache without indexing a CHM:
+
+```bash
+chmseek models prepare --allow-model-download
 ```
 
 With `--offline`, the model must already be cached locally. Query/document prefixes are applied
@@ -137,6 +159,26 @@ inside the embedding backend:
 
 Remote model code is never allowed silently. If a selected model requires remote code, you must
 pass `--allow-remote-model-code` and a pinned `--model-revision`.
+
+During indexing, document embedding shows a progress bar on stderr. Query embedding stays quiet so
+JSON output remains clean.
+
+## Embedding Speed
+
+Use `--device` on indexing or model preparation commands to choose where embeddings run:
+
+```bash
+chmseek index VendorSDK.chm --allow-model-download --device auto
+chmseek index VendorSDK.chm --device cuda
+chmseek index VendorSDK.chm --device mps
+chmseek index VendorSDK.chm --device directml
+chmseek index VendorSDK.chm --device cpu
+```
+
+`auto` prefers CUDA when available, then Apple MPS, then CPU. `directml` is for Windows systems
+where `torch-directml` has been installed separately; it is optional and not a required dependency.
+If the requested accelerator is unavailable, `chmseek` fails with an actionable error instead of
+silently switching devices.
 
 ## Cache Layout
 
@@ -171,6 +213,7 @@ logs/
 - `chmseek read PATH.chm --chunk-id ID --neighbors N`: read result context.
 - `chmseek toc PATH.chm`: browse parsed or synthetic TOC entries.
 - `chmseek info PATH.chm`: inspect index metadata and staleness.
+- `chmseek models prepare`: explicitly download/cache the configured embedding model.
 - `chmseek diagnose`: inspect OS, SQLite, extractor, model, and audit readiness.
 - `chmseek audit`: run dependency/release/security checks.
 

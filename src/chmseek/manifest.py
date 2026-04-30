@@ -37,6 +37,10 @@ def is_manifest_stale(
         reasons.append("embedding_model")
     if int(embedding.get("dimension", 0)) != embedding_config.dimension:
         reasons.append("embedding_dimension")
+    if embedding.get("revision") != embedding_config.model_revision:
+        reasons.append("embedding_revision")
+    if embedding.get("requested_device", "auto") != embedding_config.device:
+        reasons.append("embedding_device")
     if embedding.get("document_prefix") != DOCUMENT_PREFIX:
         reasons.append("embedding_document_prefix")
     if embedding.get("query_prefix") != QUERY_PREFIX:

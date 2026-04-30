@@ -104,7 +104,28 @@ def test_diagnose_and_audit_commands(cli_env: dict[str, str]) -> None:
     assert json.loads(diagnose.stdout)["sqlite"]["fts5_available"] is True
 
     audit = run_cli(["audit", "--json"], cli_env)
-    assert audit.returncode in {0, 1}
+    assert audit.returncode == 0
     payload = json.loads(audit.stdout)
     assert "source_scan" in payload
     assert "lockfiles" in payload
+    assert payload["dependency_audit"]["status"] == "skipped"
+
+
+def test_models_prepare_with_fake_backend(cli_env: dict[str, str]) -> None:
+    result = run_cli(
+        [
+            "models",
+            "prepare",
+            "--model",
+            "fake",
+            "--embedding-dim",
+            "32",
+            "--json",
+        ],
+        cli_env,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["model"] == "fake"
+    assert payload["resolved_device"] == "cpu"

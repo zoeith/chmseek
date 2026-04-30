@@ -108,10 +108,11 @@ def validate_chm_path(path: Path) -> None:
 
 
 def json_dumps(payload: dict[str, Any]) -> str:
-    return json.dumps(payload, indent=2, sort_keys=True)
+    return json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False)
 
 
 def clean_text(text: str) -> str:
+    text = decode_unicode_escape_sequences(text)
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
     collapsed: list[str] = []
@@ -125,6 +126,13 @@ def clean_text(text: str) -> str:
         collapsed.append(line)
         blank = False
     return "\n".join(collapsed).strip()
+
+
+def decode_unicode_escape_sequences(text: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        return chr(int(match.group(1), 16))
+
+    return re.sub(r"\\u([0-9a-fA-F]{4})", replace, text)
 
 
 def word_tokens(text: str) -> list[str]:

@@ -11,3 +11,4 @@ build/
 venv/
 .DS_Store
 .chmseek-test-cache/
+chmseek_bugs.md

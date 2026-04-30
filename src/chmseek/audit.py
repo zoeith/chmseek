@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -63,6 +64,11 @@ def scan_source(src_dir: Path) -> dict[str, Any]:
 
 
 def run_dependency_audit(root: Path) -> dict[str, Any]:
+    if os.environ.get("CHMSEEK_SKIP_PIP_AUDIT") == "1":
+        return {
+            "status": "skipped",
+            "message": "CHMSEEK_SKIP_PIP_AUDIT=1 was set.",
+        }
     executable = shutil.which("pip-audit")
     if executable is None:
         return {

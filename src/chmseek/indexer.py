@@ -9,7 +9,12 @@ from .chunker import CHUNKER_VERSION, chunk_pages
 from .constants import (
     SCHEMA_VERSION,
 )
-from .embeddings import EmbeddingConfig, default_model_name, make_embedding_backend
+from .embeddings import (
+    EmbeddingConfig,
+    default_model_name,
+    make_embedding_backend,
+    normalize_embedding_config,
+)
 from .errors import ChmseekError
 from .extractors import choose_extractor
 from .manifest import is_manifest_stale, load_manifest, manifest_path
@@ -30,6 +35,7 @@ class IndexOptions:
     offline: bool = False
     model_revision: str | None = None
     from_extracted_dir: Path | None = None
+    device: str = "auto"
 
 
 @dataclass
@@ -154,6 +160,8 @@ def build_index(
             "normalized": backend.normalized,
             "used_local_files_only": backend.used_local_files_only,
             "remote_model_code_allowed": backend.remote_model_code_allowed,
+            "requested_device": backend.requested_device,
+            "resolved_device": backend.resolved_device,
         },
         "extraction_method": extraction.method,
         "indexed_at": utc_now_iso(),
@@ -190,13 +198,19 @@ def _effective_embedding_config(
     options: IndexOptions, manifest: dict[str, Any] | None
 ) -> EmbeddingConfig:
     embedding = manifest.get("embedding", {}) if manifest else {}
-    return EmbeddingConfig(
-        model_name=options.model_name or embedding.get("model") or default_model_name(),
-        dimension=int(options.embedding_dim or embedding.get("dimension") or 768),
-        allow_model_download=options.allow_model_download,
-        allow_remote_model_code=options.allow_remote_model_code,
-        offline=options.offline,
-        model_revision=options.model_revision or embedding.get("revision"),
+    return normalize_embedding_config(
+        EmbeddingConfig(
+            model_name=options.model_name or embedding.get("model") or default_model_name(),
+            dimension=int(options.embedding_dim or embedding.get("dimension") or 768),
+            allow_model_download=options.allow_model_download,
+            allow_remote_model_code=(
+                options.allow_remote_model_code
+                or bool(embedding.get("remote_model_code_allowed"))
+            ),
+            offline=options.offline,
+            model_revision=options.model_revision or embedding.get("revision"),
+            device=options.device or embedding.get("requested_device") or "auto",
+        )
     )
 
 

@@ -5,6 +5,7 @@
   <h1>Session API</h1>
   <h2>CreateSession</h2>
   <p>Call CreateSession before any API operation. The function returns a session handle.</p>
+  <p><img src="../images/session-flow.png" alt="Session lifecycle diagram" title="Create and close session flow"></p>
   <pre><code>HRESULT CreateSession(const char* license, SessionHandle* outSession);</code></pre>
   <h2>CloseSession</h2>
   <p>Call CloseSession when automation is complete to release resources.</p>

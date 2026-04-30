@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chmseek"
-version = "0.1.0"
+version = "0.1.1"
 description = "Secure, local-first CLI search and reading for Windows CHM help files."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -45,6 +45,11 @@ chmseek = "chmseek.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/chmseek"]
+
+[tool.hatch.build]
+exclude = [
+  "/chmseek_bugs.md"
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
