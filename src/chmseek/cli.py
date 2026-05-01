@@ -167,7 +167,7 @@ def add_runtime_options(parser: argparse.ArgumentParser, *, include_model: bool 
 def add_device_option(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--device",
-        choices=["auto", "cpu", "cuda", "mps", "directml"],
+        choices=["auto", "cpu", "cuda", "xpu", "mps"],
         default="auto",
         help="Embedding device for model loading and indexing.",
     )

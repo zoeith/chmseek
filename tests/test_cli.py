@@ -129,3 +129,37 @@ def test_models_prepare_with_fake_backend(cli_env: dict[str, str]) -> None:
     assert payload["ok"] is True
     assert payload["model"] == "fake"
     assert payload["resolved_device"] == "cpu"
+
+
+def test_cli_device_choices_accept_xpu_and_reject_directml(cli_env: dict[str, str]) -> None:
+    xpu = run_cli(
+        [
+            "models",
+            "prepare",
+            "--model",
+            "fake",
+            "--embedding-dim",
+            "32",
+            "--device",
+            "xpu",
+            "--json",
+        ],
+        cli_env,
+    )
+    assert xpu.returncode == 0, xpu.stderr + xpu.stdout
+    assert json.loads(xpu.stdout)["requested_device"] == "xpu"
+
+    directml = run_cli(
+        [
+            "models",
+            "prepare",
+            "--model",
+            "fake",
+            "--device",
+            "directml",
+            "--json",
+        ],
+        cli_env,
+    )
+    assert directml.returncode == 2
+    assert "invalid choice" in directml.stderr

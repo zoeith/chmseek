@@ -13,7 +13,7 @@ toc -> search -> read result with neighbors -> grep exact term -> read page/chun
 
 ## Status
 
-This is the `0.1.1` MVP release. It includes:
+This is the `0.1.2` MVP release. It includes:
 
 - Windows-first CHM extraction through `hh.exe -decompile`.
 - Test/development indexing from an already-extracted help directory.
@@ -22,7 +22,7 @@ This is the `0.1.1` MVP release. It includes:
 - SQLite storage with FTS5 keyword search.
 - Local embedding search with Nomic Embed Text v1.5 by default.
 - Explicit pinned-model cache preparation through `chmseek models prepare`.
-- Embedding device selection for CUDA, MPS, optional DirectML, or CPU.
+- Embedding device selection for CUDA, Intel XPU, Apple MPS, or CPU.
 - Metadata for safe local image references in CHM pages.
 - Hybrid search using reciprocal rank fusion.
 - Stable JSON output for tools and agents.
@@ -170,15 +170,15 @@ Use `--device` on indexing or model preparation commands to choose where embeddi
 ```bash
 chmseek index VendorSDK.chm --allow-model-download --device auto
 chmseek index VendorSDK.chm --device cuda
+chmseek index VendorSDK.chm --device xpu
 chmseek index VendorSDK.chm --device mps
-chmseek index VendorSDK.chm --device directml
 chmseek index VendorSDK.chm --device cpu
 ```
 
-`auto` prefers CUDA when available, then Apple MPS, then CPU. `directml` is for Windows systems
-where `torch-directml` has been installed separately; it is optional and not a required dependency.
-If the requested accelerator is unavailable, `chmseek` fails with an actionable error instead of
-silently switching devices.
+`auto` prefers CUDA when available, then Intel XPU, then Apple MPS, then CPU. XPU requires
+a PyTorch build with XPU support; install that separately for your platform from the PyTorch
+XPU index or vendor guidance. If the requested accelerator is unavailable, `chmseek` fails with
+an actionable error instead of silently switching devices.
 
 ## Cache Layout
 

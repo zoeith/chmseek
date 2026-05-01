@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.2 - 2026-04-30
+
+Patch release.
+
+- Bumped `transformers` to `5.7.0`.
+- Replaced DirectML device selection with Intel XPU support.
+- Updated automatic embedding device priority to CUDA, XPU, MPS, then CPU.
+- Documented XPU speed guidance and kept `einops` out of direct dependencies.
+
 ## 0.1.1 - 2026-04-29
 
 Bugfix and usability release.

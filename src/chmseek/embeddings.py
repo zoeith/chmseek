@@ -284,25 +284,15 @@ def is_model_cached(model_name: str) -> bool:
 
 def resolve_device(requested_device: str) -> tuple[object, str]:
     requested = (requested_device or "auto").lower()
-    valid = {"auto", "cpu", "cuda", "mps", "directml"}
+    valid = {"auto", "cpu", "cuda", "xpu", "mps"}
     if requested not in valid:
         raise ChmseekError(
             "INVALID_EMBEDDING_DEVICE",
             f"Unsupported embedding device: {requested_device}",
-            ["Choose one of: auto, cpu, cuda, mps, directml."],
+            ["Choose one of: auto, cpu, cuda, xpu, mps."],
         )
     if requested == "cpu":
         return "cpu", "cpu"
-    if requested == "directml":
-        try:
-            import torch_directml
-        except Exception as exc:
-            raise ChmseekError(
-                "DIRECTML_UNAVAILABLE",
-                "DirectML was requested but torch-directml is not installed.",
-                ["Install torch-directml separately or use --device auto/cpu/cuda/mps."],
-            ) from exc
-        return torch_directml.device(), "directml"
 
     try:
         import torch
@@ -323,6 +313,14 @@ def resolve_device(requested_device: str) -> tuple[object, str]:
             "CUDA was requested but is not available to PyTorch.",
             ["Use --device auto or --device cpu, or install a CUDA-enabled PyTorch build."],
         )
+    if requested == "xpu":
+        if _xpu_is_available(torch):
+            return "xpu", "xpu"
+        raise ChmseekError(
+            "XPU_UNAVAILABLE",
+            "XPU was requested but is not available to PyTorch.",
+            ["Use --device auto or --device cpu, or install a PyTorch build with XPU support."],
+        )
     if requested == "mps":
         if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
             return "mps", "mps"
@@ -333,6 +331,21 @@ def resolve_device(requested_device: str) -> tuple[object, str]:
         )
     if torch.cuda.is_available():
         return "cuda", "cuda"
+    if _xpu_is_available(torch):
+        return "xpu", "xpu"
     if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
         return "mps", "mps"
     return "cpu", "cpu"
+
+
+def _xpu_is_available(torch_module: object) -> bool:
+    xpu = getattr(torch_module, "xpu", None)
+    if xpu is None:
+        return False
+    is_available = getattr(xpu, "is_available", None)
+    if is_available is None:
+        return False
+    try:
+        return bool(is_available())
+    except Exception:
+        return False

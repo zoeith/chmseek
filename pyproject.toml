@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chmseek"
-version = "0.1.1"
+version = "0.1.2"
 description = "Secure, local-first CLI search and reading for Windows CHM help files."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -33,7 +33,7 @@ dependencies = [
   "numpy==2.2.6",
   "pydantic==2.11.5",
   "sentence-transformers==5.4.1",
-  "transformers==5.0.0rc3"
+  "transformers==5.7.0"
 ]
 
 [project.urls]

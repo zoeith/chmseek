@@ -4,4 +4,4 @@ lxml==6.1.0
 numpy==2.2.6
 pydantic==2.11.5
 sentence-transformers==5.4.1
-transformers==5.0.0rc3
+transformers==5.7.0

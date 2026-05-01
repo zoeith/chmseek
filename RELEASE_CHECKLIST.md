@@ -1,6 +1,6 @@
 # Release Checklist
 
-## 0.1.1
+## 0.1.2
 
 - [ ] Confirm `README.md` examples match the released package name.
 - [ ] Create and activate the Conda environment:
@@ -13,6 +13,6 @@
 - [ ] Inspect wheel/sdist contents.
 - [ ] Create GitHub repository.
 - [ ] Push `main`.
-- [ ] Tag release: `git tag v0.1.1 && git push origin v0.1.1`
+- [ ] Tag release: `git tag v0.1.2 && git push origin v0.1.2`
 - [ ] Publish GitHub Release using `CHANGELOG.md` notes.
 - [ ] Optionally publish to PyPI after a final maintainer review.
